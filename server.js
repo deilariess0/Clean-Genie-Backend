@@ -14,7 +14,8 @@ app.use(cors({
     origin: [
         'https://booking-service-management-dashboard.vercel.app',
         'http://localhost:5173', // Allow Vite local dev server
-        'http://127.0.0.1:5173'
+        'http://127.0.0.1:5173',
+        /\.vercel\.app$/ // Allows ANY Vercel generated domain (like your -bwgcjn5zd one!)
     ],
     credentials: true
 }));
