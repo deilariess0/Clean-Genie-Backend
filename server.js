@@ -28,10 +28,11 @@ const db = mysql.createConnection({
 
 db.connect((err) => {
     if (err) {
-        console.error('Database connection failed:', err);
-        return;
+        console.error("Database connection failed, but continuing server without DB:", err.message);
+        // Do NOT return or process.exit here. Just log it.
+    } else {
+        console.log("Database connected!");
     }
-    console.log('✅ Connected to MySQL Database');
 });
 
 // 🔒 SECURITY FIX: Initialize Google OAuth Client
