@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 5000;
 
 // 🔒 SECURITY FIX: Allow your specific frontend ports (including Live Server)
 app.use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5500', 'http://localhost:5500'], 
+    origin: ['https://booking-service-management-dashboard.vercel.app'], 
     credentials: true
 }));
 app.use(bodyParser.json());
