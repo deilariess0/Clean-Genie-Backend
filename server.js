@@ -1,29 +1,36 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
-const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
-const { OAuth2Client } = require('google-auth-library'); // 🔒 ADD THIS
+const { OAuth2Client } = require('google-auth-library');
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// 🔒 SECURITY FIX: Allow your specific frontend ports (including Live Server)
+// 🔒 SECURITY FIX: Allow Vercel AND local development (localhost:5173)
 app.use(cors({
-    origin: ['https://booking-service-management-dashboard.vercel.app'], 
+    origin: [
+        'https://booking-service-management-dashboard.vercel.app',
+        'http://localhost:5173', // Allow Vite local dev server
+        'http://127.0.0.1:5173'
+    ],
     credentials: true
 }));
-app.use(bodyParser.json());
 
-// Database Connection
+// Use express.json instead of bodyParser.json (built-in)
+app.use(express.json());
+
+// ==========================================
+// DATABASE CONNECTION (Render Friendly)
+// ==========================================
 const db = mysql.createConnection({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false // Only use SSL if configured
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false 
 });
 
 db.connect((err) => {
@@ -35,30 +42,34 @@ db.connect((err) => {
     }
 });
 
-// 🔒 SECURITY FIX: Initialize Google OAuth Client
+// 🔒 Initialize Google OAuth Client
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+// ==========================================
+// ROOT ROUTE (REQUIRED FOR RENDER)
+// ==========================================
+// This prevents Render from seeing a 404 and killing the server
+app.get('/', (req, res) => {
+    res.send('Clean Genie Backend is running successfully!');
+});
 
 // ==========================================
 // AUTH ROUTES
 // ==========================================
-
-// 1. Email/Password Register (ONLY FIRST ADMIN - SECURED)
+// (All of your existing Auth routes remain exactly the same)
 app.post('/api/auth/register', async (req, res) => {
     const { email, password, full_name } = req.body;
     if (!email || !password || !full_name) return res.status(400).json({ error: 'All fields are required' });
 
-    // Check if any admin already exists
     db.query('SELECT COUNT(*) as count FROM admins', async (err, results) => {
         if (err) return res.status(500).json({ error: 'Database error' });
 
         const adminCount = results[0].count;
 
-        // Block registration if admin exists
         if (adminCount > 0) {
             return res.status(403).json({ error: 'Access Denied: Only the Super Admin can create accounts. Please contact the Super Admin.' });
         }
 
-        // Allow first admin registration
         db.query('SELECT * FROM admins WHERE email = ?', [email], async (err, results) => {
             if (err) return res.status(500).json({ error: 'Database error' });
             if (results.length > 0) return res.status(409).json({ error: 'Email already registered' });
@@ -74,7 +85,6 @@ app.post('/api/auth/register', async (req, res) => {
     });
 });
 
-// 2. Email/Password Login
 app.post('/api/auth/login', (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
@@ -92,12 +102,10 @@ app.post('/api/auth/login', (req, res) => {
     });
 });
 
-// 🔒 SECURITY FIX: Google OAuth Login (VERIFIED)
 app.post('/api/auth/google', async (req, res) => {
     const { credential } = req.body;
 
     try {
-        // Verify the Google token
         const ticket = await googleClient.verifyIdToken({
             idToken: credential,
             audience: process.env.GOOGLE_CLIENT_ID
@@ -106,12 +114,10 @@ app.post('/api/auth/google', async (req, res) => {
         const payload = ticket.getPayload();
         const { email, name, sub: googleId } = payload;
 
-        // Check if admin exists
         db.query('SELECT * FROM admins WHERE email = ?', [email], async (err, results) => {
             if (err) return res.status(500).json({ error: 'Database error' });
 
             if (results.length === 0) {
-                // Create new admin if doesn't exist
                 const sql = "INSERT INTO admins (email, full_name, role, google_id) VALUES (?, ?, 'ADMIN', ?)";
                 db.query(sql, [email, name, googleId], (err, result) => {
                     if (err) return res.status(500).json({ error: 'Database error' });
@@ -119,7 +125,6 @@ app.post('/api/auth/google', async (req, res) => {
                     res.status(201).json({ token, admin: { id: result.insertId, email, full_name: name, role: 'ADMIN' } });
                 });
             } else {
-                // Existing admin - login
                 const admin = results[0];
                 const token = jwt.sign({ id: admin.id, email: admin.email, full_name: admin.full_name, role: admin.role }, process.env.JWT_SECRET, { expiresIn: '1d' });
                 res.status(200).json({ token, admin: { id: admin.id, email: admin.email, full_name: admin.full_name, role: admin.role } });
@@ -131,7 +136,6 @@ app.post('/api/auth/google', async (req, res) => {
     }
 });
 
-// 3. Get Current User (Auth Middleware)
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
@@ -144,7 +148,6 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-// SUPER ADMIN CHECK MIDDLEWARE
 const requireSuperAdmin = (req, res, next) => {
     if (req.user.role !== 'SUPER_ADMIN') {
         return res.status(403).json({ error: 'Access Denied: Super Admin privileges required.' });
@@ -159,8 +162,8 @@ app.get('/api/auth/me', authenticateToken, (req, res) => {
 // ==========================================
 // ADMIN MANAGEMENT ROUTES (SUPER ADMIN ONLY)
 // ==========================================
+// (All your existing Admin routes remain exactly the same)
 
-// 1. GET all admins (Super Admin only)
 app.get('/api/admins', authenticateToken, requireSuperAdmin, (req, res) => {
     const sql = "SELECT id, email, full_name, role, created_at FROM admins";
     db.query(sql, (err, results) => {
@@ -169,7 +172,6 @@ app.get('/api/admins', authenticateToken, requireSuperAdmin, (req, res) => {
     });
 });
 
-// 2. CREATE a new admin (Super Admin only)
 app.post('/api/admins', authenticateToken, requireSuperAdmin, async (req, res) => {
     const { email, password, full_name, role } = req.body;
     if (!email || !password || !full_name) {
@@ -190,7 +192,6 @@ app.post('/api/admins', authenticateToken, requireSuperAdmin, async (req, res) =
     });
 });
 
-// 3. UPDATE admin role (Super Admin only)
 app.put('/api/admins/:id/role', authenticateToken, requireSuperAdmin, (req, res) => {
     const { role } = req.body;
     if (!['SUPER_ADMIN', 'ADMIN'].includes(role)) {
@@ -204,7 +205,6 @@ app.put('/api/admins/:id/role', authenticateToken, requireSuperAdmin, (req, res)
     });
 });
 
-// 4. DELETE an admin (Super Admin only)
 app.delete('/api/admins/:id', authenticateToken, requireSuperAdmin, (req, res) => {
     const sql = "DELETE FROM admins WHERE id = ?";
     db.query(sql, [req.params.id], (err, result) => {
@@ -215,10 +215,9 @@ app.delete('/api/admins/:id', authenticateToken, requireSuperAdmin, (req, res) =
 });
 
 // ==========================================
-// BOOKING ROUTES (🔒 NOW SECURED WITH AUTH)
+// BOOKING ROUTES (SECURED WITH AUTH)
 // ==========================================
 
-// 1. Create a new booking (PUBLIC - customers can book)
 app.post('/api/bookings', (req, res) => {
     const {
         full_name, phone, email, service_address, service_type, area_size, 
@@ -245,9 +244,7 @@ app.post('/api/bookings', (req, res) => {
     });
 });
 
-// 🔒 FIX: All below routes now require authentication
-
-// 2. Get all bookings (ADMIN ONLY)
+// All these are protected by authenticateToken
 app.get('/api/bookings', authenticateToken, (req, res) => {
     const sql = "SELECT id, full_name, phone, email, service_address, service_type, area_size, price_per_sqm, total_price, preferred_date, preferred_time, payment_method, payment_status, payment_reference, booking_status, notes, created_at FROM bookings ORDER BY created_at DESC";
     db.query(sql, (err, result) => {
@@ -256,7 +253,6 @@ app.get('/api/bookings', authenticateToken, (req, res) => {
     });
 });
 
-// 3. Get single booking by ID (ADMIN ONLY)
 app.get('/api/bookings/:id', authenticateToken, (req, res) => {
     const bookingId = req.params.id;
     const sql = "SELECT * FROM bookings WHERE id = ?";
@@ -267,7 +263,6 @@ app.get('/api/bookings/:id', authenticateToken, (req, res) => {
     });
 });
 
-// 4. Update booking status (ADMIN ONLY)
 app.put('/api/bookings/:id/status', authenticateToken, (req, res) => {
     const bookingId = req.params.id;
     const { booking_status } = req.body;
@@ -287,7 +282,6 @@ app.put('/api/bookings/:id/status', authenticateToken, (req, res) => {
     });
 });
 
-// 5. Update payment status (ADMIN ONLY)
 app.put('/api/bookings/:id/payment', authenticateToken, (req, res) => {
     const bookingId = req.params.id;
     const { payment_status } = req.body;
@@ -307,7 +301,6 @@ app.put('/api/bookings/:id/payment', authenticateToken, (req, res) => {
     });
 });
 
-// 6. Delete a booking (ADMIN ONLY)
 app.delete('/api/bookings/:id', authenticateToken, (req, res) => {
     const bookingId = req.params.id;
     const sql = "DELETE FROM bookings WHERE id = ?";
