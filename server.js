@@ -9,13 +9,15 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// 🔒 SECURITY FIX: Allow Vercel AND local development (localhost:5173)
+// 🔒 SECURITY FIX: Allow Vercel (Admin), GitHub Pages (Customer), AND local development
 app.use(cors({
     origin: [
-        'https://booking-service-management-dashboard.vercel.app',
-        'http://localhost:5173', // Allow Vite local dev server
+        'https://booking-service-management-dashboard.vercel.app', // Admin Dashboard
+        'https://delaries0.github.io', // Customer Booking Page (GitHub Pages)
+        'http://localhost:5173', // Admin Local dev server
         'http://127.0.0.1:5173',
-        /\.vercel\.app$/ // Allows ANY Vercel generated domain (like your -bwgcjn5zd one!)
+        /\.vercel\.app$/, // Allows ANY Vercel generated domain
+        /\.github\.io$/   // Allows ANY GitHub Pages domain
     ],
     credentials: true
 }));
