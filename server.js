@@ -28,6 +28,7 @@ app.use(express.json());
 // ==========================================
 const db = mysql.createConnection({
     host: process.env.DB_HOST,
+    port: process.env.DB_PORT || 3306, // <--- ADDED PORT HERE! (Will read 10769 from Render)
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
