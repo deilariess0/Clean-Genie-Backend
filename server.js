@@ -24,23 +24,27 @@ app.use(cors({
 app.use(express.json());
 
 // ==========================================
-// DATABASE CONNECTION (Render Friendly)
+// DATABASE CONNECTION (Render Friendly & Pooled)
 // ==========================================
-const db = mysql.createConnection({
+const db = mysql.createPool({
     host: process.env.DB_HOST,
-    port: process.env.DB_PORT || 3306, // <--- ADDED PORT HERE! (Will read 10769 from Render)
+    port: process.env.DB_PORT || 3306, // <--- Reads 10769 from Render
     user: process.env.DB_USER,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0,
     ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false 
 });
 
-db.connect((err) => {
+// Test the connection pool
+db.getConnection((err, connection) => {
     if (err) {
         console.error("Database connection failed, but continuing server without DB:", err.message);
-        // Do NOT return or process.exit here. Just log it.
     } else {
         console.log("Database connected!");
+        connection.release(); // Release the connection back to the pool
     }
 });
 
